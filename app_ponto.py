@@ -12,13 +12,20 @@ st.set_page_config(
 
 
 def conectar_google_sheets():
-  # Pega o dicionário de segredos e limpa a chave privada de eventuais espaços ou barras duplas
   sec = dict(st.secrets["google_sheets"])
+
+  # Tratamento blindado para reconstruir a chave privada linha por linha sem erros
   if "private_key" in sec:
-    # Garante que as quebras de linha literais fiquem corretas
-    sec["private_key"] = (
-        sec["private_key"].replace("\\n", "\n").strip().strip('"').strip("'")
-    )
+    pk = sec["private_key"]
+    # Limpa aspas extras que o TOML possa ter adicionado
+    pk = pk.strip().strip('"').strip("'")
+    if "-----BEGIN PRIVATE KEY-----" in pk:
+      # Garante o formato correto com quebras de linha reais
+      lines = pk.split("\\n")
+      if len(lines) <= 1:
+        lines = pk.split("\n")
+      pk = "\n".join([line.strip() for line in lines if line.strip()])
+    sec["private_key"] = pk
 
   gc = gspread.service_account_from_dict(sec)
   sheet = gc.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
