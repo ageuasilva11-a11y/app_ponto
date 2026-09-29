@@ -22,7 +22,9 @@ def fazer_backup_diario():
     arquivo_backup = os.path.join(pasta_backup, f"ponto_{hoje_str}.csv")
     if not os.path.exists(arquivo_backup):
       try:
-        shutil.copy(ARQUIVO_BANCO, arquivo_backup)
+        # Copia usando utf-8-sig para garantir integridade dos acentos
+        df_temp = pd.read_csv(ARQUIVO_BANCO, encoding="utf-8-sig")
+        df_temp.to_csv(arquivo_backup, index=False, encoding="utf-8-sig")
       except Exception:
         pass
 
@@ -31,7 +33,8 @@ def carregar_dados():
   fazer_backup_diario()
   if os.path.exists(ARQUIVO_BANCO):
     try:
-      df = pd.read_csv(ARQUIVO_BANCO)
+      # utf-8-sig garante que o Excel leia os acentos perfeitamente
+      df = pd.read_csv(ARQUIVO_BANCO, encoding="utf-8-sig")
       if "Mês/Ano" not in df.columns:
         if "Data" in df.columns:
           df["Mês/Ano"] = pd.to_datetime(
@@ -39,7 +42,7 @@ def carregar_dados():
           ).dt.strftime("%m/%Y")
         else:
           df["Mês/Ano"] = datetime.now().strftime("%m/%Y")
-        df.to_csv(ARQUIVO_BANCO, index=False)
+        df.to_csv(ARQUIVO_BANCO, index=False, encoding="utf-8-sig")
       return df
     except Exception:
       pass
@@ -60,7 +63,7 @@ def carregar_dados():
 def carregar_assinaturas():
   if os.path.exists(ARQUIVO_ASSINATURAS):
     try:
-      return pd.read_csv(ARQUIVO_ASSINATURAS)
+      return pd.read_csv(ARQUIVO_ASSINATURAS, encoding="utf-8-sig")
     except Exception:
       pass
   return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
@@ -68,7 +71,6 @@ def carregar_assinaturas():
 
 def salvar_assinatura(nome, mes_ano):
   df_ass = carregar_assinaturas()
-  # Remove assinatura anterior do mesmo mês se houver, para atualizar
   df_ass = df_ass[~((df_ass["Nome"] == nome) & (df_ass["Mês/Ano"] == mes_ano))]
 
   nova_ass = pd.DataFrame(
@@ -80,7 +82,7 @@ def salvar_assinatura(nome, mes_ano):
     }]
   )
   df_ass = pd.concat([df_ass, nova_ass], ignore_index=True)
-  df_ass.to_csv(ARQUIVO_ASSINATURAS, index=False)
+  df_ass.to_csv(ARQUIVO_ASSINATURAS, index=False, encoding="utf-8-sig")
 
 
 def salvar_registro(nome, tipo, lat, lon, obs):
@@ -99,11 +101,10 @@ def salvar_registro(nome, tipo, lat, lon, obs):
     }]
   )
   df = pd.concat([df, novo_registro], ignore_index=True)
-  df.to_csv(ARQUIVO_BANCO, index=False)
+  df.to_csv(ARQUIVO_BANCO, index=False, encoding="utf-8-sig")
   fazer_backup_diario()
 
 
-# Abas na tela principal para separar o Bater Ponto do Espelho/Assinatura
 aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatura"])
 
 with aba1:
@@ -163,7 +164,6 @@ with aba2:
       meses = sorted(df_registros["Mês/Ano"].dropna().unique().tolist())
       mes_sel = st.selectbox("Selecione o Mês:", meses)
 
-    # Filtra os dados do funcionário no mês escolhido
     df_espelho = df_registros[
         (df_registros["Nome"] == func_sel)
         & (df_registros["Mês/Ano"] == mes_sel)
@@ -174,7 +174,6 @@ with aba2:
     if not df_espelho.empty:
       st.dataframe(df_espelho, use_container_width=True)
 
-      # Verifica se já está assinado
       ja_assinado = not df_ass[
           (df_ass["Nome"] == func_sel) & (df_ass["Mês/Ano"] == mes_sel)
       ].empty
@@ -197,8 +196,10 @@ with aba2:
           st.success("Espelho assinado com sucesso! Atualizando...")
           st.rerun()
 
-      # Botão de Download do relatório individual
-      csv_ind = df_espelho.to_csv(index=False).encode("utf-8")
+      # Codificação ajustada para o botão de download baixar compatível com Excel
+      csv_ind = df_espelho.to_csv(index=False, encoding="utf-8-sig").encode(
+          "utf-8-sig"
+      )
       st.download_button(
           label="📥 Baixar Espelho em CSV",
           data=csv_ind,
@@ -210,4 +211,4 @@ with aba2:
           "Nenhum registro encontrado para este funcionário no mês selecionado."
       )
   else:
-    st.info("Nenhum ponto registrado no sistema ainda.")
+      st.info("Nenhum ponto registrado no sistema ainda.")
