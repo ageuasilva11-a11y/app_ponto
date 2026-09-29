@@ -1,4 +1,5 @@
 from datetime import datetime
+import io
 import os
 import shutil
 import pandas as pd
@@ -22,7 +23,6 @@ def fazer_backup_diario():
     arquivo_backup = os.path.join(pasta_backup, f"ponto_{hoje_str}.csv")
     if not os.path.exists(arquivo_backup):
       try:
-        # Copia usando utf-8-sig para garantir integridade dos acentos
         df_temp = pd.read_csv(ARQUIVO_BANCO, encoding="utf-8-sig")
         df_temp.to_csv(arquivo_backup, index=False, encoding="utf-8-sig")
       except Exception:
@@ -33,7 +33,6 @@ def carregar_dados():
   fazer_backup_diario()
   if os.path.exists(ARQUIVO_BANCO):
     try:
-      # utf-8-sig garante que o Excel leia os acentos perfeitamente
       df = pd.read_csv(ARQUIVO_BANCO, encoding="utf-8-sig")
       if "Mês/Ano" not in df.columns:
         if "Data" in df.columns:
@@ -103,6 +102,15 @@ def salvar_registro(nome, tipo, lat, lon, obs):
   df = pd.concat([df, novo_registro], ignore_index=True)
   df.to_csv(ARQUIVO_BANCO, index=False, encoding="utf-8-sig")
   fazer_backup_diario()
+
+
+# Função para gerar um Excel (.xlsx) perfeitamente formatado
+def converter_para_excel_bytes(df):
+  output = io.BytesIO()
+  with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    df.to_excel(writer, index=False, sheet_name="Espelho de Ponto")
+  processed_data = output.getvalue()
+  return processed_data
 
 
 aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatura"])
@@ -196,19 +204,19 @@ with aba2:
           st.success("Espelho assinado com sucesso! Atualizando...")
           st.rerun()
 
-      # Codificação ajustada para o botão de download baixar compatível com Excel
-      csv_ind = df_espelho.to_csv(index=False, encoding="utf-8-sig").encode(
-          "utf-8-sig"
-      )
+      # Botão de Download atualizado para gerar um arquivo Excel (.xlsx) real
+      excel_bytes = converter_para_excel_bytes(df_espelho)
       st.download_button(
-          label="📥 Baixar Espelho em CSV",
-          data=csv_ind,
-          file_name=f"espelho_{func_sel}_{mes_sel}.csv".replace("/", "-"),
-          mime="text/csv",
+          label="📥 Baixar Espelho em Excel (.xlsx)",
+          data=excel_bytes,
+          file_name=f"espelho_{func_sel}_{mes_sel}.xlsx".replace("/", "-"),
+          mime=(
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          ),
       )
     else:
       st.info(
           "Nenhum registro encontrado para este funcionário no mês selecionado."
       )
   else:
-      st.info("Nenhum ponto registrado no sistema ainda.")
+    st.info("Nenhum ponto registrado no sistema ainda.")
