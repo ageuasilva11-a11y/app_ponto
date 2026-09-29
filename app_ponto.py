@@ -1,116 +1,137 @@
 from datetime import datetime
-import io
 import os
-import shutil
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import streamlit as st
 from streamlit_geolocation import streamlit_geolocation
 
 st.set_page_config(
-    page_title="Ponto Eletrônico - Externa", page_icon="📍", layout="centered"
+    page_title="Ponto Eletrônico - Google Sheets",
+    page_icon="📍",
+    layout="centered",
 )
 
-ARQUIVO_BANCO = "registros_ponto.csv"
-ARQUIVO_ASSINATURAS = "assinaturas_ponto.csv"
 
-
-def fazer_backup_diario():
-  if os.path.exists(ARQUIVO_BANCO):
-    hoje_str = datetime.now().strftime("%d-%m-%Y")
-    pasta_backup = "backups_diarios"
-    if not os.path.exists(pasta_backup):
-      os.makedirs(pasta_backup)
-    arquivo_backup = os.path.join(pasta_backup, f"ponto_{hoje_str}.csv")
-    if not os.path.exists(arquivo_backup):
-      try:
-        df_temp = pd.read_csv(ARQUIVO_BANCO, encoding="utf-8-sig")
-        df_temp.to_csv(arquivo_backup, index=False, encoding="utf-8-sig")
-      except Exception:
-        pass
+# Conexão segura com o Google Sheets usando os Secrets do Streamlit
+def conectar_google_sheets():
+  scope = [
+      "https://spreadsheets.google.com/feeds",
+      "https://www.googleapis.com/auth/drive",
+  ]
+  # Puxa as credenciais diretamente dos Secrets configurados no Streamlit Cloud
+  credentials_dict = dict(st.secrets["google_sheets"])
+  creds = ServiceAccountCredentials.from_json_keyfile_dict(
+      credentials_dict, scope
+  )
+  client = gspread.authorize(creds)
+  # Abre a planilha pelo nome exato que você criou no Google Drive
+  sheet = client.open("Base Ponto Eletronico")
+  return sheet
 
 
 def carregar_dados():
-  fazer_backup_diario()
-  if os.path.exists(ARQUIVO_BANCO):
-    try:
-      df = pd.read_csv(ARQUIVO_BANCO, encoding="utf-8-sig")
-      if "Mês/Ano" not in df.columns:
-        if "Data" in df.columns:
-          df["Mês/Ano"] = pd.to_datetime(
-              df["Data"], format="%d/%m/%Y", errors="coerce"
-          ).dt.strftime("%m/%Y")
-        else:
-          df["Mês/Ano"] = datetime.now().strftime("%m/%Y")
-        df.to_csv(ARQUIVO_BANCO, index=False, encoding="utf-8-sig")
-      return df
-    except Exception:
-      pass
-  return pd.DataFrame(
-    columns=[
-        "Nome",
-        "Tipo",
-        "Data",
-        "Hora",
-        "Mês/Ano",
-        "Latitude",
-        "Longitude",
-        "Observação",
-    ]
-  )
+  try:
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Sheet1")  # ou "Página1" dependendo do seu idioma
+    dados = worksheet.get_all_records()
+    df = pd.DataFrame(dados)
 
+    if df.empty:
+      return pd.DataFrame(
+          columns=[
+              "Nome",
+              "Tipo",
+              "Data",
+              "Hora",
+              "Mês/Ano",
+              "Latitude",
+              "Longitude",
+              "Observação",
+          ]
+      )
 
-def carregar_assinaturas():
-  if os.path.exists(ARQUIVO_ASSINATURAS):
-    try:
-      return pd.read_csv(ARQUIVO_ASSINATURAS, encoding="utf-8-sig")
-    except Exception:
-      pass
-  return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
-
-
-def salvar_assinatura(nome, mes_ano):
-  df_ass = carregar_assinaturas()
-  df_ass = df_ass[~((df_ass["Nome"] == nome) & (df_ass["Mês/Ano"] == mes_ano))]
-
-  nova_ass = pd.DataFrame(
-    [{
-        "Nome": nome,
-        "Mês/Ano": mes_ano,
-        "Data_Assinatura": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "Status": "Assinado Digitalmente",
-    }]
-  )
-  df_ass = pd.concat([df_ass, nova_ass], ignore_index=True)
-  df_ass.to_csv(ARQUIVO_ASSINATURAS, index=False, encoding="utf-8-sig")
+    if "Mês/Ano" not in df.columns or df["Mês/Ano"].isnull().all():
+      if "Data" in df.columns:
+        df["Mês/Ano"] = pd.to_datetime(
+            df["Data"], format="%d/%m/%Y", errors="coerce"
+        ).dt.strftime("%m/%Y")
+      else:
+        df["Mês/Ano"] = datetime.now().strftime("%m/%Y")
+    return df
+  except Exception as e:
+    st.error(f"Erro ao carregar dados do Google Sheets: {e}")
+    return pd.DataFrame(
+        columns=[
+            "Nome",
+            "Tipo",
+            "Data",
+            "Hora",
+            "Mês/Ano",
+            "Latitude",
+            "Longitude",
+            "Observação",
+        ]
+    )
 
 
 def salvar_registro(nome, tipo, lat, lon, obs):
-  df = carregar_dados()
-  agora = datetime.now()
-  novo_registro = pd.DataFrame(
-    [{
-        "Nome": nome,
-        "Tipo": tipo,
-        "Data": agora.strftime("%d/%m/%Y"),
-        "Hora": agora.strftime("%H:%M:%S"),
-        "Mês/Ano": agora.strftime("%m/%Y"),
-        "Latitude": str(lat),
-        "Longitude": str(lon),
-        "Observação": obs,
-    }]
-  )
-  df = pd.concat([df, novo_registro], ignore_index=True)
-  df.to_csv(ARQUIVO_BANCO, index=False, encoding="utf-8-sig")
-  fazer_backup_diario()
+  try:
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Sheet1")
+    agora = datetime.now()
+    nova_linha = [
+        nome,
+        tipo,
+        agora.strftime("%d/%m/%Y"),
+        agora.strftime("%H:%M:%S"),
+        agora.strftime("%m/%Y"),
+        str(lat),
+        str(lon),
+        obs,
+    ]
+    worksheet.append_row(nova_linha)
+    return True
+  except Exception as e:
+    st.error(f"Erro ao salvar registro na nuvem: {e}")
+    return False
 
 
-# Função para gerar um Excel (.xlsx) perfeitamente formatado
-def converter_para_excel_bytes(df):
-  output = io.BytesIO()
-  with pd.ExcelWriter(output, engine="openpyxl") as writer:
-    df.to_excel(writer, index=False, sheet_name="Espelho de Ponto")
-  processed_data = output.getvalue()
-  return processed_data
+def carregar_assinaturas():
+  try:
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Assinaturas")
+    dados = worksheet.get_all_records()
+    df = pd.DataFrame(dados)
+    if df.empty:
+      return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
+    return df
+  except Exception:
+    return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
+
+
+def salvar_assinatura(nome, mes_ano):
+  try:
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Assinaturas")
+
+    # Remove assinatura anterior se já existir para atualizar
+    registros = worksheet.get_all_records()
+    for i, reg in enumerate(registros):
+      if reg.get("Nome") == nome and reg.get("Mês/Ano") == mes_ano:
+        worksheet.delete_rows(i + 2)  # +2 por causa do cabeçalho
+
+    nova_linha = [
+        nome,
+        mes_ano,
+        datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "Assinado Digitalmente",
+    ]
+    worksheet.append_row(nova_linha)
+    return True
+  except Exception as e:
+    st.error(f"Erro ao salvar assinatura: {e}")
+    return False
 
 
 aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatura"])
@@ -149,21 +170,22 @@ with aba1:
     elif not loc or not loc.get("latitude") or not loc.get("longitude"):
       st.error("Por favor, aguarde a captura do GPS antes de salvar.")
     else:
-      salvar_registro(
+      sucesso = salvar_registro(
           nome_colaborador,
           tipo_ponto,
           loc.get("latitude"),
           loc.get("longitude"),
           observacao,
       )
-      st.success(f"Ponto de **{nome_colaborador}** salvo com sucesso!")
+      if sucesso:
+        st.success(f"Ponto de **{nome_colaborador}** salvo com sucesso na nuvem!")
 
 with aba2:
   st.title("📁 Espelho de Ponto Individual")
   df_registros = carregar_dados()
   df_ass = carregar_assinaturas()
 
-  if not df_registros.empty:
+  if not df_registros.empty and "Nome" in df_registros.columns:
     col_func, col_mes = st.columns(2)
     with col_func:
       funcionarios = sorted(df_registros["Nome"].dropna().unique().tolist())
@@ -182,9 +204,11 @@ with aba2:
     if not df_espelho.empty:
       st.dataframe(df_espelho, use_container_width=True)
 
-      ja_assinado = not df_ass[
-          (df_ass["Nome"] == func_sel) & (df_ass["Mês/Ano"] == mes_sel)
-      ].empty
+      ja_assinado = False
+      if not df_ass.empty and "Nome" in df_ass.columns:
+        ja_assinado = not df_ass[
+            (df_ass["Nome"] == func_sel) & (df_ass["Mês/Ano"] == mes_sel)
+        ].empty
 
       if ja_assinado:
         dados_ass = df_ass[
@@ -200,19 +224,19 @@ with aba2:
             " mês."
         )
         if st.button(f"✍️ Assinar Espelho de Ponto de {mes_sel}"):
-          salvar_assinatura(func_sel, mes_sel)
-          st.success("Espelho assinado com sucesso! Atualizando...")
-          st.rerun()
+          if salvar_assinatura(func_sel, mes_sel):
+            st.success("Espelho assinado e salvo no Google Sheets!")
+            st.rerun()
 
-      # Botão de Download atualizado para gerar um arquivo Excel (.xlsx) real
-      excel_bytes = converter_para_excel_bytes(df_espelho)
+      # Opcional: botão para baixar caso queira uma cópia local rápida
+      csv_bytes = df_espelho.to_csv(index=False, encoding="utf-8-sig").encode(
+          "utf-8-sig"
+      )
       st.download_button(
-          label="📥 Baixar Espelho em Excel (.xlsx)",
-          data=excel_bytes,
-          file_name=f"espelho_{func_sel}_{mes_sel}.xlsx".replace("/", "-"),
-          mime=(
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          ),
+          label="📥 Baixar Cópia em CSV",
+          data=csv_bytes,
+          file_name=f"espelho_{func_sel}_{mes_sel}.csv".replace("/", "-"),
+          mime="text/csv",
       )
     else:
       st.info(
