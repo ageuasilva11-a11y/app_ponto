@@ -12,10 +12,15 @@ st.set_page_config(
 
 
 def conectar_google_sheets():
-  # Converte os segredos em dicionário e normaliza a chave privada com quebras de linha reais
   sec = dict(st.secrets["google_sheets"])
+
+  # Normaliza a chave privada substituindo qualquer formato de quebra de linha corrompido
   if "private_key" in sec:
-    sec["private_key"] = sec["private_key"].replace("\\n", "\n")
+    pk = sec["private_key"]
+    # Se vier com \\n literal, substitui por \n real
+    pk = pk.replace("\\n", "\n")
+    # Garante que as linhas de início e fim estejam corretas
+    sec["private_key"] = pk
 
   gc = gspread.service_account_from_dict(sec)
   nome_planilha = st.secrets["google_sheets"].get(
