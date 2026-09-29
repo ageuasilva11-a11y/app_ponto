@@ -1,4 +1,5 @@
 from datetime import datetime
+import gspread
 import pandas as pd
 import streamlit as st
 from streamlit_geolocation import streamlit_geolocation
@@ -10,12 +11,20 @@ st.set_page_config(
 )
 
 
-# Conexão nativa e segura com o Google Sheets via Streamlit
+def conectar_google_sheets():
+  # Usa a chave configurada nos secrets do Streamlit de forma nativa
+  gc = gspread.service_account_from_dict(dict(st.secrets["google_sheets"]))
+  # Abre a planilha pelo link ou pelo nome exato
+  sheet = gc.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
+  return sheet
+
+
 def carregar_dados():
   try:
-    # Lê a aba 'Sheet1' diretamente da planilha configurada nos segredos
-    conn = st.connection("gsheets", type="gsheets")
-    df = conn.read(worksheet="Sheet1", ttl=0)
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Sheet1")
+    dados = worksheet.get_all_records()
+    df = pd.DataFrame(dados)
 
     if df.empty or "Nome" not in df.columns:
       return pd.DataFrame(
@@ -57,25 +66,20 @@ def carregar_dados():
 
 def salvar_registro(nome, tipo, lat, lon, obs):
   try:
-    conn = st.connection("gsheets", type="gsheets")
-    df_atual = conn.read(worksheet="Sheet1", ttl=0)
-
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Sheet1")
     agora = datetime.now()
-    novo_dado = pd.DataFrame(
-        [{
-            "Nome": nome,
-            "Tipo": tipo,
-            "Data": agora.strftime("%d/%m/%Y"),
-            "Hora": agora.strftime("%H:%M:%S"),
-            "Mês/Ano": agora.strftime("%m/%Y"),
-            "Latitude": str(lat),
-            "Longitude": str(lon),
-            "Observação": obs,
-        }]
-    )
-
-    df_atualizado = pd.concat([df_atual, novo_dado], ignore_index=True)
-    conn.update(worksheet="Sheet1", data=df_atualizado)
+    nova_linha = [
+        nome,
+        tipo,
+        agora.strftime("%d/%m/%Y"),
+        agora.strftime("%H:%M:%S"),
+        agora.strftime("%m/%Y"),
+        str(lat),
+        str(lon),
+        obs,
+    ]
+    worksheet.append_row(nova_linha)
     return True
   except Exception as e:
     st.error(f"Erro ao salvar registro na nuvem: {e}")
@@ -84,8 +88,10 @@ def salvar_registro(nome, tipo, lat, lon, obs):
 
 def carregar_assinaturas():
   try:
-    conn = st.connection("gsheets", type="gsheets")
-    df = conn.read(worksheet="Assinaturas", ttl=0)
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Assinaturas")
+    dados = worksheet.get_all_records()
+    df = pd.DataFrame(dados)
     if df.empty:
       return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
     return df
@@ -95,22 +101,21 @@ def carregar_assinaturas():
 
 def salvar_assinatura(nome, mes_ano):
   try:
-    conn = st.connection("gsheets", type="gsheets")
-    df_ass = carregar_assinaturas()
+    sheet = conectar_google_sheets()
+    worksheet = sheet.worksheet("Assinaturas")
 
-    # Remove assinatura anterior se existir para atualizar
-    df_ass = df_ass[~((df_ass["Nome"] == nome) & (df_ass["Mês/Ano"] == mes_ano))]
+    registros = worksheet.get_all_records()
+    for i, reg in enumerate(registros):
+      if reg.get("Nome") == nome and reg.get("Mês/Ano") == mes_ano:
+        worksheet.delete_rows(i + 2)
 
-    nova_linha = pd.DataFrame(
-        [{
-            "Nome": nome,
-            "Mês/Ano": mes_ano,
-            "Data_Assinatura": datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-            "Status": "Assinado Digitalmente",
-        }]
-    )
-    df_ass = pd.concat([df_ass, nova_linha], ignore_index=True)
-    conn.update(worksheet="Assinaturas", data=df_ass)
+    nova_linha = [
+        nome,
+        mes_ano,
+        datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "Assinado Digitalmente",
+    ]
+    worksheet.append_row(nova_linha)
     return True
   except Exception as e:
     st.error(f"Erro ao salvar assinatura: {e}")
