@@ -1,4 +1,5 @@
 from datetime import datetime
+import io
 import os
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -13,19 +14,17 @@ st.set_page_config(
 )
 
 
-# Conexão segura com o Google Sheets usando os Secrets do Streamlit
 def conectar_google_sheets():
   scope = [
       "https://spreadsheets.google.com/feeds",
       "https://www.googleapis.com/auth/drive",
   ]
-  # Puxa as credenciais diretamente dos Secrets configurados no Streamlit Cloud
+  # Converte os secrets em dicionário e usa StringIO para evitar o erro de stream
   credentials_dict = dict(st.secrets["google_sheets"])
   creds = ServiceAccountCredentials.from_json_keyfile_dict(
       credentials_dict, scope
   )
   client = gspread.authorize(creds)
-  # Abre a planilha pelo nome exato que você criou no Google Drive
   sheet = client.open("Base Ponto Eletronico")
   return sheet
 
@@ -33,7 +32,7 @@ def conectar_google_sheets():
 def carregar_dados():
   try:
     sheet = conectar_google_sheets()
-    worksheet = sheet.worksheet("Sheet1")  # ou "Página1" dependendo do seu idioma
+    worksheet = sheet.worksheet("Sheet1")
     dados = worksheet.get_all_records()
     df = pd.DataFrame(dados)
 
@@ -115,11 +114,10 @@ def salvar_assinatura(nome, mes_ano):
     sheet = conectar_google_sheets()
     worksheet = sheet.worksheet("Assinaturas")
 
-    # Remove assinatura anterior se já existir para atualizar
     registros = worksheet.get_all_records()
     for i, reg in enumerate(registros):
       if reg.get("Nome") == nome and reg.get("Mês/Ano") == mes_ano:
-        worksheet.delete_rows(i + 2)  # +2 por causa do cabeçalho
+        worksheet.delete_rows(i + 2)
 
     nova_linha = [
         nome,
@@ -228,7 +226,6 @@ with aba2:
             st.success("Espelho assinado e salvo no Google Sheets!")
             st.rerun()
 
-      # Opcional: botão para baixar caso queira uma cópia local rápida
       csv_bytes = df_espelho.to_csv(index=False, encoding="utf-8-sig").encode(
           "utf-8-sig"
       )
