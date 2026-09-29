@@ -2,4 +2,3 @@ streamlit
 pandas
 streamlit-geolocation
 streamlit-gsheets
-gspread
