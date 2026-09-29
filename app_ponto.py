@@ -1,8 +1,6 @@
 from datetime import datetime
-import io
-import os
+from google.oauth2.service_account import Credentials
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import streamlit as st
 from streamlit_geolocation import streamlit_geolocation
@@ -13,17 +11,17 @@ st.set_page_config(
     layout="centered",
 )
 
+# Escopos necessários para acessar o Google Sheets e o Drive
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
 
 def conectar_google_sheets():
-  scope = [
-      "https://spreadsheets.google.com/feeds",
-      "https://www.googleapis.com/auth/drive",
-  ]
-  # Converte os secrets em dicionário e usa StringIO para evitar o erro de stream
-  credentials_dict = dict(st.secrets["google_sheets"])
-  creds = ServiceAccountCredentials.from_json_keyfile_dict(
-      credentials_dict, scope
-  )
+  # Carrega os segredos diretamente do Streamlit como um dicionário
+  secrets_dict = dict(st.secrets["google_sheets"])
+  creds = Credentials.from_service_account_info(secrets_dict, scopes=SCOPES)
   client = gspread.authorize(creds)
   sheet = client.open("Base Ponto Eletronico")
   return sheet
