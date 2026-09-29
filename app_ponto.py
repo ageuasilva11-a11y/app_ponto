@@ -12,9 +12,15 @@ st.set_page_config(
 
 
 def conectar_google_sheets():
-  # Usa a chave configurada nos secrets do Streamlit de forma nativa
-  gc = gspread.service_account_from_dict(dict(st.secrets["google_sheets"]))
-  # Abre a planilha pelo link ou pelo nome exato
+  # Pega o dicionário de segredos e limpa a chave privada de eventuais espaços ou barras duplas
+  sec = dict(st.secrets["google_sheets"])
+  if "private_key" in sec:
+    # Garante que as quebras de linha literais fiquem corretas
+    sec["private_key"] = (
+        sec["private_key"].replace("\\n", "\n").strip().strip('"').strip("'")
+    )
+
+  gc = gspread.service_account_from_dict(sec)
   sheet = gc.open_by_url(st.secrets["connections"]["gsheets"]["spreadsheet"])
   return sheet
 
