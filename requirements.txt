@@ -2,3 +2,5 @@ streamlit
 pandas
 streamlit-geolocation
 openpyxl
+gspread
+oauth2client
