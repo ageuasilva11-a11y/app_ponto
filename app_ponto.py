@@ -11,7 +11,6 @@ st.set_page_config(
     layout="centered",
 )
 
-# Escopos necessários para acessar o Google Sheets e o Drive
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -19,8 +18,14 @@ SCOPES = [
 
 
 def conectar_google_sheets():
-  # Carrega os segredos diretamente do Streamlit como um dicionário
   secrets_dict = dict(st.secrets["google_sheets"])
+
+  # Garante que as quebras de linha da chave privada sejam interpretadas corretamente
+  if "private_key" in secrets_dict:
+    secrets_dict["private_key"] = secrets_dict["private_key"].replace(
+        "\\n", "\n"
+    )
+
   creds = Credentials.from_service_account_info(secrets_dict, scopes=SCOPES)
   client = gspread.authorize(creds)
   sheet = client.open("Base Ponto Eletronico")
