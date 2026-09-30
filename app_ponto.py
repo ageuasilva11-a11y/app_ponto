@@ -13,43 +13,46 @@ st.set_page_config(
 
 def conectar_google_sheets():
   sec = dict(st.secrets["google_sheets"])
-
-  # Normaliza a chave privada substituindo qualquer formato de quebra de linha corrompido
   if "private_key" in sec:
-    pk = sec["private_key"]
-    # Se vier com \\n literal, substitui por \n real
-    pk = pk.replace("\\n", "\n")
-    # Garante que as linhas de início e fim estejam corretas
-    sec["private_key"] = pk
-
+    sec["private_key"] = sec["private_key"].replace("\\n", "\n")
   gc = gspread.service_account_from_dict(sec)
   nome_planilha = st.secrets["google_sheets"].get(
       "planilha_nome", "Base Ponto Eletronico"
   )
-  sheet = gc.open(nome_planilha)
-  return sheet
+  return gc.open(nome_planilha)
+
+
+def obter_ou_criar_worksheet(sheet, nome_aba, colunas_padrao):
+  try:
+    return sheet.worksheet(nome_aba)
+  except gspread.exceptions.WorksheetNotFound:
+    ws = sheet.add_worksheet(title=nome_aba, rows=1000, cols=len(colunas_padrao))
+    ws.append_row(colunas_padrao)
+    return ws
+
+
+COLUNAS_PONTO = [
+    "Nome",
+    "Tipo",
+    "Data",
+    "Hora",
+    "Mês/Ano",
+    "Latitude",
+    "Longitude",
+    "Observação",
+]
+COLUNAS_ASSINATURA = ["Nome", "Mês/Ano", "Data_Assinatura", "Status"]
 
 
 def carregar_dados():
   try:
     sheet = conectar_google_sheets()
-    worksheet = sheet.worksheet("Sheet1")
+    worksheet = obter_ou_criar_worksheet(sheet, "Sheet1", COLUNAS_PONTO)
     dados = worksheet.get_all_records()
     df = pd.DataFrame(dados)
 
     if df.empty or "Nome" not in df.columns:
-      return pd.DataFrame(
-          columns=[
-              "Nome",
-              "Tipo",
-              "Data",
-              "Hora",
-              "Mês/Ano",
-              "Latitude",
-              "Longitude",
-              "Observação",
-          ]
-      )
+      return pd.DataFrame(columns=COLUNAS_PONTO)
 
     if "Mês/Ano" not in df.columns or df["Mês/Ano"].isnull().all():
       if "Data" in df.columns:
@@ -61,25 +64,17 @@ def carregar_dados():
     return df
   except Exception as e:
     st.error(f"Erro ao carregar dados: {e}")
-    return pd.DataFrame(
-        columns=[
-            "Nome",
-            "Tipo",
-            "Data",
-            "Hora",
-            "Mês/Ano",
-            "Latitude",
-            "Longitude",
-            "Observação",
-        ]
-    )
+    return pd.DataFrame(columns=COLUNAS_PONTO)
 
 
 def salvar_registro(nome, tipo, lat, lon, obs):
   try:
     sheet = conectar_google_sheets()
-    worksheet = sheet.worksheet("Sheet1")
+    worksheet = obter_ou_criar_worksheet(sheet, "Sheet1", COLUNAS_PONTO)
+    
+    # Pega o horário atual do servidor ajustado ou usa o momento da submissão
     agora = datetime.now()
+    
     nova_linha = [
         nome,
         tipo,
@@ -100,20 +95,20 @@ def salvar_registro(nome, tipo, lat, lon, obs):
 def carregar_assinaturas():
   try:
     sheet = conectar_google_sheets()
-    worksheet = sheet.worksheet("Assinaturas")
+    worksheet = obter_ou_criar_worksheet(sheet, "Assinaturas", COLUNAS_ASSINATURA)
     dados = worksheet.get_all_records()
     df = pd.DataFrame(dados)
     if df.empty:
-      return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
+      return pd.DataFrame(columns=COLUNAS_ASSINATURA)
     return df
   except Exception:
-    return pd.DataFrame(columns=["Nome", "Mês/Ano", "Data_Assinatura", "Status"])
+    return pd.DataFrame(columns=COLUNAS_ASSINATURA)
 
 
 def salvar_assinatura(nome, mes_ano):
   try:
     sheet = conectar_google_sheets()
-    worksheet = sheet.worksheet("Assinaturas")
+    worksheet = obter_ou_criar_worksheet(sheet, "Assinaturas", COLUNAS_ASSINATURA)
 
     registros = worksheet.get_all_records()
     for i, reg in enumerate(registros):
@@ -137,6 +132,23 @@ aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatur
 
 with aba1:
   st.title("📍 Registro de Ponto à Distância")
+  
+  # Script JS leve para exibir a hora local do dispositivo do utilizador em tempo real
+  st.markdown("""
+      <div style="background-color: #f0f2f6; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px;">
+          <span style="font-size: 14px; color: #31333F;">🕒 Horário detetado no seu dispositivo:</span><br>
+          <span id="relogio" style="font-size: 20px; font-weight: bold; color: #0068C9;">A carregar...</span>
+      </div>
+      <script>
+          function atualizarRelogio() {
+              const agora = new Date();
+              document.getElementById('relogio').innerText = agora.toLocaleDateString() + ' - ' + agora.toLocaleTimeString();
+          }
+          setInterval(atualizarRelogio, 1000);
+          atualizarRelogio();
+      </script>
+  """, unsafe_allow_html=True)
+
   with st.form(key="form_ponto"):
     nome_colaborador = st.text_input(
         "Nome do Funcionário:", placeholder="Ex: Ageu Silva"
@@ -167,7 +179,7 @@ with aba1:
     if not nome_colaborador.strip():
       st.error("Por favor, preencha o nome do funcionário.")
     elif not loc or not loc.get("latitude") or not loc.get("longitude"):
-      st.error("Por aguardar a captura do GPS antes de salvar.")
+      st.error("Por favor, aguarde a captura do GPS antes de salvar.")
     else:
       sucesso = salvar_registro(
           nome_colaborador,
