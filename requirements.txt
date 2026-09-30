@@ -1,4 +1,5 @@
 streamlit
+gspread
 pandas
 streamlit-geolocation
-gspread
+streamlit-js-eval
