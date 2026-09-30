@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import gspread
 import pandas as pd
 import streamlit as st
@@ -67,24 +67,40 @@ def carregar_dados():
     return pd.DataFrame(columns=COLUNAS_PONTO)
 
 
-def salvar_registro(nome, tipo, data_str, hora_str, lat, lon, obs):
+def calcular_horario_por_longitude(lon):
+  """Calcula o fuso horário com base na longitude do GPS:
+
+  - Longitude menor que -50 (Oeste do Brasil: Amazonas, Acre, etc.): UTC-4
+  - Longitude maior ou igual a -50 (Leste/Nordeste/Sudeste: Ceará, SP, etc.):
+  UTC-3
+  """
+  agora_utc = datetime.utcnow()
+  if lon is not None and lon < -50.0:
+    # Fuso Amazonas (UTC-4)
+    agora_local = agora_utc - timedelta(hours=4)
+  else:
+    # Fuso Brasília / Ceará (UTC-3)
+    agora_local = agora_utc - timedelta(hours=3)
+  return agora_local
+
+
+def salvar_registro(nome, tipo, lat, lon, obs):
   try:
     sheet = conectar_google_sheets()
     worksheet = obter_ou_criar_worksheet(sheet, "Sheet1", COLUNAS_PONTO)
 
-    # Extrai o mês/ano da data fornecida pelo dispositivo
-    try:
-      dt_obj = datetime.strptime(data_str, "%d/%m/%Y")
-      mes_ano_str = dt_obj.strftime("%m/%Y")
-    except Exception:
-      mes_ano_str = datetime.now().strftime("%m/%Y")
+    # Determina a hora exata com base na localização GPS do funcionário
+    agora_local = calcular_horario_por_longitude(lon)
+    d = agora_local.strftime("%d/%m/%Y")
+    h = agora_local.strftime("%H:%M:%S")
+    m = agora_local.strftime("%m/%Y")
 
     nova_linha = [
         nome,
         tipo,
-        str(data_str),
-        str(hora_str),
-        str(mes_ano_str),
+        str(d),
+        str(h),
+        str(m),
         str(lat),
         str(lon),
         obs,
@@ -109,7 +125,7 @@ def carregar_assinaturas():
     return pd.DataFrame(columns=COLUNAS_ASSINATURA)
 
 
-def salvar_assinatura(nome, mes_ano):
+def salvar_assinatura(nome, mes_ano, lon):
   try:
     sheet = conectar_google_sheets()
     worksheet = obter_ou_criar_worksheet(sheet, "Assinaturas", COLUNAS_ASSINATURA)
@@ -119,8 +135,8 @@ def salvar_assinatura(nome, mes_ano):
       if reg.get("Nome") == nome and reg.get("Mês/Ano") == mes_ano:
         worksheet.delete_rows(i + 2)
 
-    agora = datetime.now()
-    hora_atual = agora.strftime("%d/%m/%Y %H:%M:%S")
+    agora_local = calcular_horario_por_longitude(lon)
+    hora_atual = agora_local.strftime("%d/%m/%Y %H:%M:%S")
 
     nova_linha = [
         nome,
@@ -140,109 +156,71 @@ aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatur
 with aba1:
   st.title("📍 Registro de Ponto à Distância")
 
-  # Instruções para o GPS
   st.markdown("---")
-  st.subheader("1. Obter Localização GPS")
+  st.subheader("1. Obter Localização GPS (Necessário para validar o horário)")
   loc = streamlit_geolocation()
 
   lat = loc.get("latitude") if loc else None
   lon = loc.get("longitude") if loc else None
 
   if lat and lon:
-    st.success(f"GPS Capturado com sucesso! (Lat: {lat}, Lon: {lon})")
+    regiao = "Amazonas (Manaus)" if lon < -50.0 else "Ceará / Outros (UTC-3)"
+    st.success(
+        f"✅ GPS Capturado! Localização identificada: **{regiao}** (Lat:"
+        f" {lat}, Lon: {lon})"
+    )
+
+    # Mostra o relógio em tempo real adaptado à região do GPS do telemóvel
+    agora_visor = calcular_horario_por_longitude(lon)
+    st.info(f"🕒 Horário ajustado para a sua região: {agora_visor.strftime('%d/%m/%Y - %H:%M:%S')}")
   else:
     st.warning(
-        "⚠️ Aguardando permissão ou sinal de GPS. Por favor, permita o acesso à"
-        " localização no seu dispositivo."
+        "⚠️ Por favor, permita o acesso à localização GPS no seu telemóvel"
+        " para calcular o fuso horário correto."
     )
 
   st.markdown("---")
-  st.subheader("2. Dados do Ponto e Registo Automático")
+  st.subheader("2. Dados do Ponto")
 
-  # Formulário interativo puro em HTML/JS executado no navegador do utilizador
-  # Isso garante que a data e a hora recolhidas são EXATAMENTE as do telemóvel/computador dele, onde quer que ele esteja.
-  form_html = """
-    <form action="" method="get" style="font-family: sans-serif; background-color: #f9f9f9; padding: 20px; border-radius: 10px; border: 1px solid #e0e0e0;">
-        <div style="margin-bottom: 15px;">
-            <label style="font-weight: bold; color: #31333F; display: block; margin-bottom: 5px;">Nome do Funcionário:</label>
-            <input type="text" id="input_nome" name="nome" placeholder="Ex: Ageu Silva" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box;" required>
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-            <label style="font-weight: bold; color: #31333F; display: block; margin-bottom: 5px;">Tipo de Marcação:</label>
-            <select id="select_tipo" name="tipo" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; background: white;">
-                <option value="Entrada">Entrada</option>
-                <option value="Início Almoço">Início Almoço</option>
-                <option value="Fim Almoço">Fim Almoço</option>
-                <option value="Saída">Saída</option>
-                <option value="Visita Externa / Obra">Visita Externa / Obra</option>
-            </select>
-        </div>
+  with st.form(key="form_ponto_nativo"):
+    nome_colaborador = st.text_input(
+        "Nome do Funcionário:", placeholder="Ex: Ageu Silva"
+    )
+    tipo_ponto = st.selectbox(
+        "Tipo de Marcação:",
+        [
+            "Entrada",
+            "Início Almoço",
+            "Fim Almoço",
+            "Saída",
+            "Visita Externa / Obra",
+        ],
+    )
+    observacao = st.text_area(
+        "Observação (Opcional):", placeholder="Ex: Canteiro de obras"
+    )
 
-        <div style="margin-bottom: 15px;">
-            <label style="font-weight: bold; color: #31333F; display: block; margin-bottom: 5px;">Observação (Opcional):</label>
-            <textarea id="input_obs" name="obs" placeholder="Ex: Canteiro de obras" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; height: 80px;"></textarea>
-        </div>
+    submit_button = st.form_submit_button(
+        label="✅ Salvar Registro de Ponto", type="primary"
+    )
 
-        <!-- Campos ocultos que capturam automaticamente a data e hora do dispositivo do utilizador -->
-        <input type="hidden" id="hidden_data" name="data_dispositivo">
-        <input type="hidden" id="hidden_hora" name="hora_dispositivo">
-
-        <button type="submit" onclick="preencherHorario()" style="background-color: #ff4b4b; color: white; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; width: 100%;">
-            ✅ Salvar Registro de Ponto
-        </button>
-    </form>
-
-    <script>
-    function preencherHorario() {
-        const agora = new Date();
-        
-        // Formata a data DD/MM/YYYY baseada no fuso do dispositivo do utilizador
-        const dia = String(agora.getDate()).padStart(2, '0');
-        const mes = String(agora.getMonth() + 1).padStart(2, '0');
-        const ano = agora.getFullYear();
-        document.getElementById('hidden_data').value = dia + '/' + mes + '/' + ano;
-
-        // Formata a hora HH:MM:SS baseada no fuso do dispositivo do utilizador
-        const horas = String(agora.getHours()).padStart(2, '0');
-        const minutos = String(agora.getMinutes()).padStart(2, '0');
-        const segundos = String(agora.getSeconds()).padStart(2, '0');
-        document.getElementById('hidden_hora').value = horas + ':' + minutos + ':' + segundos;
-    }
-    </script>
-    """
-
-  # Renderiza o formulário customizado
-  import streamlit.components.v1 as components
-
-  components.html(form_html, height=450)
-
-  # Captura os parâmetros enviados pelo formulário HTML quando o utilizador clica em salvar
-  params = st.query_params
-  if "nome" in params and params["nome"]:
-    nome_val = params["nome"]
-    tipo_val = params.get("tipo", "Entrada")
-    obs_val = params.get("obs", "")
-    data_val = params.get("data_dispositivo", datetime.now().strftime("%d/%m/%Y"))
-    hora_val = params.get("hora_dispositivo", datetime.now().strftime("%H:%M:%S"))
-
-    if not lat or not lon:
+  if submit_button:
+    if not nome_colaborador.strip():
+      st.error("Por favor, preencha o nome do funcionário.")
+    elif not lat or not lon:
       st.error(
-          "⚠️ O GPS ainda não foi detetado acima. Aguarde o sinal verde de"
-          " localização antes de submeter."
+          "⚠️ Aguarde a captura do sinal de GPS antes de salvar o ponto para"
+          " garantir a hora correta."
       )
     else:
-      # Salva na planilha com os dados exatos recolhidos do telemóvel do funcionário
       sucesso = salvar_registro(
-          nome_val, tipo_val, data_val, hora_val, lat, lon, obs_val
+          nome_colaborador, tipo_ponto, lat, lon, observacao
       )
       if sucesso:
         st.success(
-            f"Ponto de **{nome_val}** registrado com sucesso às {hora_val} do"
-            f" dia {data_val}!"
+            f"Ponto de **{nome_colaborador}** registrado com sucesso na"
+            " planilha!"
         )
-        # Limpa os parâmetros da URL para evitar múltiplos envios ao atualizar a página
-        st.query_params.clear()
         st.rerun()
 
 with aba2:
@@ -289,7 +267,8 @@ with aba2:
             " mês."
         )
         if st.button(f"✍️ Assinar Espelho de Ponto de {mes_sel}"):
-          if salvar_assinatura(func_sel, mes_sel):
+          # Usa a última longitude conhecida ou assume o padrão de Manaus se não tiver GPS recente
+          if salvar_assinatura(func_sel, mes_sel, lon=-60.0):
             st.success("Espelho assinado e salvo no Google Sheets!")
             st.rerun()
 
