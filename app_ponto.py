@@ -73,24 +73,27 @@ def salvar_registro(nome, tipo, lat, lon, obs):
     sheet = conectar_google_sheets()
     worksheet = obter_ou_criar_worksheet(sheet, "Sheet1", COLUNAS_PONTO)
 
-    # Captura a data e hora formatada diretamente do navegador do telemóvel do utilizador
+    # Captura a data, hora e mês exatos do dispositivo/navegador do utilizador no momento do clique
     data_str = streamlit_js_eval(
         js_expressions="new Date().toLocaleDateString('pt-BR')",
-        key=f"data_{datetime.now().timestamp()}",
+        key=f"data_clique_{datetime.now().timestamp()}",
+        want_output=True,
     )
     hora_str = streamlit_js_eval(
         js_expressions="new Date().toLocaleTimeString('pt-BR')",
-        key=f"hora_{datetime.now().timestamp()}",
+        key=f"hora_clique_{datetime.now().timestamp()}",
+        want_output=True,
     )
     mes_ano_str = streamlit_js_eval(
         js_expressions=(
             "String(new Date().getMonth() + 1).padStart(2, '0') + '/' +"
             " new Date().getFullYear()"
         ),
-        key=f"mes_{datetime.now().timestamp()}",
+        key=f"mes_clique_{datetime.now().timestamp()}",
+        want_output=True,
     )
 
-    # Fallback caso o JS demore um milissegundo a retornar
+    # Fallback de segurança caso o navegador demore a responder
     agora = datetime.now()
     d = data_str if data_str else agora.strftime("%d/%m/%Y")
     h = hora_str if hora_str else agora.strftime("%H:%M:%S")
@@ -99,9 +102,9 @@ def salvar_registro(nome, tipo, lat, lon, obs):
     nova_linha = [
         nome,
         tipo,
-        d,
-        h,
-        m,
+        str(d),
+        str(h),
+        str(m),
         str(lat),
         str(lon),
         obs,
@@ -141,7 +144,8 @@ def salvar_assinatura(nome, mes_ano):
             "new Date().toLocaleDateString('pt-BR') + ' ' +"
             " new Date().toLocaleTimeString('pt-BR')"
         ),
-        key=f"ass_{datetime.now().timestamp()}",
+        key=f"ass_clique_{datetime.now().timestamp()}",
+        want_output=True,
     )
     if not hora_atual:
       hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -149,7 +153,7 @@ def salvar_assinatura(nome, mes_ano):
     nova_linha = [
         nome,
         mes_ano,
-        hora_atual,
+        str(hora_atual),
         "Assinado Digitalmente",
     ]
     worksheet.append_row(nova_linha)
@@ -164,13 +168,13 @@ aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatur
 with aba1:
   st.title("📍 Registro de Ponto à Distância")
 
-  # Exibição visual limpa do relógio usando JS component seguro
-  hora_tela = streamlit_js_eval(
+  # Exibição do relógio local detetado no telemóvel do colaborador
+  relogio_local = streamlit_js_eval(
       js_expressions=(
           "new Date().toLocaleDateString('pt-BR') + ' - ' +"
           " new Date().toLocaleTimeString('pt-BR')"
       ),
-      key="relogio_tela",
+      key="relogio_usuario_tela",
       want_output=True,
       throttle=1000,
   )
@@ -178,8 +182,8 @@ with aba1:
   st.markdown(
       f"""
       <div style="background-color: #f0f2f6; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px;">
-          <span style="font-size: 14px; color: #31333F;">🕒 Horário detetado no seu dispositivo:</span><br>
-          <span style="font-size: 20px; font-weight: bold; color: #0068C9;">{hora_tela if hora_tela else 'A sincronizar...'}</span>
+          <span style="font-size: 14px; color: #31333F;">🕒 Horário no seu dispositivo:</span><br>
+          <span style="font-size: 20px; font-weight: bold; color: #0068C9;">{relogio_local if relogio_local else 'A sincronizar com o seu telemóvel...'}</span>
       </div>
   """,
       unsafe_allow_html=True,
@@ -213,7 +217,7 @@ with aba1:
 
   if submit_button:
     if not nome_colaborador.strip():
-      st.error("Por favor, preencha o nome do funcionário.")
+      st.error("Por favor, preencha o funcionário.")
     elif not loc or not loc.get("latitude") or not loc.get("longitude"):
       st.error("Por favor, aguarde a captura do GPS antes de salvar.")
     else:
@@ -225,7 +229,7 @@ with aba1:
           observacao,
       )
       if sucesso:
-        st.success(f"Ponto de **{nome_colaborador}** salvo com sucesso na nuvem!")
+        st.success(f"Ponto de **{nome_colaborador}** salvo com sucesso!")
         st.rerun()
 
 with aba2:
