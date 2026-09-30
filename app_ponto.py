@@ -3,6 +3,7 @@ import gspread
 import pandas as pd
 import streamlit as st
 from streamlit_geolocation import streamlit_geolocation
+from streamlit_js_eval import streamlit_js_eval
 
 st.set_page_config(
     page_title="Ponto Eletrônico - Google Sheets",
@@ -71,16 +72,36 @@ def salvar_registro(nome, tipo, lat, lon, obs):
   try:
     sheet = conectar_google_sheets()
     worksheet = obter_ou_criar_worksheet(sheet, "Sheet1", COLUNAS_PONTO)
-    
-    # Pega o horário atual do servidor ajustado ou usa o momento da submissão
+
+    # Captura a data e hora formatada diretamente do navegador do telemóvel do utilizador
+    data_str = streamlit_js_eval(
+        js_expressions="new Date().toLocaleDateString('pt-BR')",
+        key=f"data_{datetime.now().timestamp()}",
+    )
+    hora_str = streamlit_js_eval(
+        js_expressions="new Date().toLocaleTimeString('pt-BR')",
+        key=f"hora_{datetime.now().timestamp()}",
+    )
+    mes_ano_str = streamlit_js_eval(
+        js_expressions=(
+            "String(new Date().getMonth() + 1).padStart(2, '0') + '/' +"
+            " new Date().getFullYear()"
+        ),
+        key=f"mes_{datetime.now().timestamp()}",
+    )
+
+    # Fallback caso o JS demore um milissegundo a retornar
     agora = datetime.now()
-    
+    d = data_str if data_str else agora.strftime("%d/%m/%Y")
+    h = hora_str if hora_str else agora.strftime("%H:%M:%S")
+    m = mes_ano_str if mes_ano_str else agora.strftime("%m/%Y")
+
     nova_linha = [
         nome,
         tipo,
-        agora.strftime("%d/%m/%Y"),
-        agora.strftime("%H:%M:%S"),
-        agora.strftime("%m/%Y"),
+        d,
+        h,
+        m,
         str(lat),
         str(lon),
         obs,
@@ -115,10 +136,20 @@ def salvar_assinatura(nome, mes_ano):
       if reg.get("Nome") == nome and reg.get("Mês/Ano") == mes_ano:
         worksheet.delete_rows(i + 2)
 
+    hora_atual = streamlit_js_eval(
+        js_expressions=(
+            "new Date().toLocaleDateString('pt-BR') + ' ' +"
+            " new Date().toLocaleTimeString('pt-BR')"
+        ),
+        key=f"ass_{datetime.now().timestamp()}",
+    )
+    if not hora_atual:
+      hora_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
     nova_linha = [
         nome,
         mes_ano,
-        datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        hora_atual,
         "Assinado Digitalmente",
     ]
     worksheet.append_row(nova_linha)
@@ -132,22 +163,27 @@ aba1, aba2 = st.tabs(["📝 Registrar Ponto", "📁 Espelho de Ponto & Assinatur
 
 with aba1:
   st.title("📍 Registro de Ponto à Distância")
-  
-  # Script JS leve para exibir a hora local do dispositivo do utilizador em tempo real
-  st.markdown("""
+
+  # Exibição visual limpa do relógio usando JS component seguro
+  hora_tela = streamlit_js_eval(
+      js_expressions=(
+          "new Date().toLocaleDateString('pt-BR') + ' - ' +"
+          " new Date().toLocaleTimeString('pt-BR')"
+      ),
+      key="relogio_tela",
+      want_output=True,
+      throttle=1000,
+  )
+
+  st.markdown(
+      f"""
       <div style="background-color: #f0f2f6; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px;">
           <span style="font-size: 14px; color: #31333F;">🕒 Horário detetado no seu dispositivo:</span><br>
-          <span id="relogio" style="font-size: 20px; font-weight: bold; color: #0068C9;">A carregar...</span>
+          <span style="font-size: 20px; font-weight: bold; color: #0068C9;">{hora_tela if hora_tela else 'A sincronizar...'}</span>
       </div>
-      <script>
-          function atualizarRelogio() {
-              const agora = new Date();
-              document.getElementById('relogio').innerText = agora.toLocaleDateString() + ' - ' + agora.toLocaleTimeString();
-          }
-          setInterval(atualizarRelogio, 1000);
-          atualizarRelogio();
-      </script>
-  """, unsafe_allow_html=True)
+  """,
+      unsafe_allow_html=True,
+  )
 
   with st.form(key="form_ponto"):
     nome_colaborador = st.text_input(
@@ -190,6 +226,7 @@ with aba1:
       )
       if sucesso:
         st.success(f"Ponto de **{nome_colaborador}** salvo com sucesso na nuvem!")
+        st.rerun()
 
 with aba2:
   st.title("📁 Espelho de Ponto Individual")
