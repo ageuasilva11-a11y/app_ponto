@@ -68,18 +68,27 @@ def carregar_dados():
 
 
 def calcular_horario_por_longitude(lon):
-    """Calcula o fuso horário com base na longitude do GPS:
-    - Longitude menor que -50 (Oeste do Brasil: Amazonas, Acre, etc.): UTC-4
-    - Longitude maior ou igual a -50 (Leste/Nordeste/Sudeste: Ceará, SP, etc.): UTC-3
-    """
     agora_utc = datetime.utcnow()
     if lon is not None and lon < -50.0:
-        # Fuso Amazonas (UTC-4)
         agora_local = agora_utc - timedelta(hours=4)
     else:
-        # Fuso Brasília / Ceará (UTC-3)
         agora_local = agora_utc - timedelta(hours=3)
     return agora_local
+
+
+def verificar_ponto_ja_registrado_hoje(nome, data_hoje):
+    """Verifica se o funcionário já bateu ponto hoje para evitar duplicidade."""
+    df = carregar_dados()
+    if df.empty or "Nome" not in df.columns or "Data" not in df.columns:
+        return False
+    
+    # Normaliza o nome para evitar conflitos de maiúsculas/minúsculas e espaços
+    df["Nome_Clean"] = df["Nome"].astype(str).str.strip().str.lower()
+    nome_clean = str(nome).strip().lower()
+    
+    # Filtra registros do mesmo funcionário na mesma data
+    registros_hoje = df[(df["Nome_Clean"] == nome_clean) & (df["Data"] == data_hoje)]
+    return not registros_hoje.empty
 
 
 def salvar_registro(nome, tipo, lat, lon, obs):
@@ -92,8 +101,12 @@ def salvar_registro(nome, tipo, lat, lon, obs):
         h = agora_local.strftime("%H:%M:%S")
         m = agora_local.strftime("%m/%Y")
 
+        # Validação dupla de segurança antes de inserir
+        if verificar_ponto_ja_registrado_hoje(nome, d):
+            return "duplicado"
+
         nova_linha = [
-            nome,
+            nome.strip(),
             tipo,
             str(d),
             str(h),
@@ -206,11 +219,11 @@ with aba1:
                 "⚠️ Aguarde a captura do sinal de GPS antes de salvar o ponto para garantir a hora correta."
             )
         else:
-            # --- VALIDAÇÃO DA REGRA DE HORÁRIO ---
             agora_local = calcular_horario_por_longitude(lon)
             hora_local = agora_local.time()
+            data_hoje = agora_local.strftime("%d/%m/%Y")
             
-            # Limite permitido: a partir das 06:30:00
+            # Validação de Horário (A partir das 06:30)
             HORA_MINIMA_PERMITIDA = time(6, 30, 0)
 
             if hora_local < HORA_MINIMA_PERMITIDA:
@@ -218,13 +231,19 @@ with aba1:
                     f"❌ **Marcação Bloqueada!** O horário atual é {agora_local.strftime('%H:%M')}. "
                     "O registro de ponto só é autorizado a partir das **06:30** (30 minutos antes das 07:00)."
                 )
+            elif verificar_ponto_ja_registrado_hoje(nome_colaborador, data_hoje):
+                st.warning(
+                    f"⚠️ **Atenção:** O funcionário **{nome_colaborador.strip()}** já registrou o ponto hoje ({data_hoje}). Não é permitido registrar novamente."
+                )
             else:
-                sucesso = salvar_registro(
+                resultado = salvar_registro(
                     nome_colaborador, tipo_ponto, lat, lon, observacao
                 )
-                if sucesso:
+                if resultado == "duplicado":
+                    st.warning(f"⚠️ O funcionário **{nome_colaborador.strip()}** já possui um ponto registrado hoje.")
+                elif resultado is True:
                     st.success(
-                        f"Ponto de **{nome_colaborador}** registrado com sucesso às {agora_local.strftime('%H:%M:%S')}!"
+                        f"✅ Ponto Registrado! O registro de **{nome_colaborador}** foi efetuado com sucesso às {agora_local.strftime('%H:%M:%S')}."
                     )
                     st.rerun()
 
