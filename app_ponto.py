@@ -216,7 +216,7 @@ with aba1:
             if hora_local < HORA_MINIMA_PERMITIDA:
                 st.error(
                     f"❌ **Marcação Bloqueada!** O horário atual é {agora_local.strftime('%H:%M')}. "
-                    "O registro de ponto só é autorizado a partir das **06:45** (15 minutos antes das 07:00)."
+                    "O registro de ponto só é autorizado a partir das **06:30** (30 minutos antes das 07:00)."
                 )
             else:
                 sucesso = salvar_registro(
