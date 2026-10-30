@@ -210,8 +210,8 @@ with aba1:
             agora_local = calcular_horario_por_longitude(lon)
             hora_local = agora_local.time()
             
-            # Limite permitido: a partir das 06:45:00
-            HORA_MINIMA_PERMITIDA = time(6, 45, 0)
+            # Limite permitido: a partir das 06:30:00
+            HORA_MINIMA_PERMITIDA = time(6, 30, 0)
 
             if hora_local < HORA_MINIMA_PERMITIDA:
                 st.error(
