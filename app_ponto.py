@@ -76,19 +76,24 @@ def calcular_horario_por_longitude(lon):
     return agora_local
 
 
-def verificar_ponto_ja_registrado_hoje(nome, data_hoje):
-    """Verifica se o funcionário já bateu ponto hoje para evitar duplicidade."""
+def verificar_tipo_ponto_ja_registrado_hoje(nome, tipo_ponto, data_hoje):
+    """Verifica se o funcionário já registrou exatamente ESSE TIPO de ponto hoje."""
     df = carregar_dados()
-    if df.empty or "Nome" not in df.columns or "Data" not in df.columns:
+    if df.empty or "Nome" not in df.columns or "Data" not in df.columns or "Tipo" not in df.columns:
         return False
     
-    # Normaliza o nome para evitar conflitos de maiúsculas/minúsculas e espaços
     df["Nome_Clean"] = df["Nome"].astype(str).str.strip().str.lower()
-    nome_clean = str(nome).strip().lower()
+    df["Tipo_Clean"] = df["Tipo"].astype(str).str.strip().str.lower()
     
-    # Filtra registros do mesmo funcionário na mesma data
-    registros_hoje = df[(df["Nome_Clean"] == nome_clean) & (df["Data"] == data_hoje)]
-    return not registros_hoje.empty
+    nome_clean = str(nome).strip().lower()
+    tipo_clean = str(tipo_ponto).strip().lower()
+    
+    registros = df[
+        (df["Nome_Clean"] == nome_clean) & 
+        (df["Data"] == data_hoje) & 
+        (df["Tipo_Clean"] == tipo_clean)
+    ]
+    return not registros.empty
 
 
 def salvar_registro(nome, tipo, lat, lon, obs):
@@ -101,8 +106,8 @@ def salvar_registro(nome, tipo, lat, lon, obs):
         h = agora_local.strftime("%H:%M:%S")
         m = agora_local.strftime("%m/%Y")
 
-        # Validação dupla de segurança antes de inserir
-        if verificar_ponto_ja_registrado_hoje(nome, d):
+        # Impede apenas se o mesmo tipo exato já foi batido hoje
+        if verificar_tipo_ponto_ja_registrado_hoje(nome, tipo, d):
             return "duplicado"
 
         nova_linha = [
@@ -223,27 +228,27 @@ with aba1:
             hora_local = agora_local.time()
             data_hoje = agora_local.strftime("%d/%m/%Y")
             
-            # Validação de Horário (A partir das 06:30)
+            # Validação de Horário apenas para a ENTRADA (a partir das 06:30)
             HORA_MINIMA_PERMITIDA = time(6, 30, 0)
 
-            if hora_local < HORA_MINIMA_PERMITIDA:
+            if tipo_ponto == "Entrada" and hora_local < HORA_MINIMA_PERMITIDA:
                 st.error(
                     f"❌ **Marcação Bloqueada!** O horário atual é {agora_local.strftime('%H:%M')}. "
-                    "O registro de ponto só é autorizado a partir das **06:30** (30 minutos antes das 07:00)."
+                    "O registro de **Entrada** só é autorizado a partir das **06:30** (30 minutos antes das 07:00)."
                 )
-            elif verificar_ponto_ja_registrado_hoje(nome_colaborador, data_hoje):
+            elif verificar_tipo_ponto_ja_registrado_hoje(nome_colaborador, tipo_ponto, data_hoje):
                 st.warning(
-                    f"⚠️ **Atenção:** O funcionário **{nome_colaborador.strip()}** já registrou o ponto hoje ({data_hoje}). Não é permitido registrar novamente."
+                    f"⚠️ **Atenção:** O funcionário **{nome_colaborador.strip()}** já registrou o ponto de **'{tipo_ponto}'** hoje ({data_hoje})."
                 )
             else:
                 resultado = salvar_registro(
                     nome_colaborador, tipo_ponto, lat, lon, observacao
                 )
                 if resultado == "duplicado":
-                    st.warning(f"⚠️ O funcionário **{nome_colaborador.strip()}** já possui um ponto registrado hoje.")
+                    st.warning(f"⚠️ O funcionário **{nome_colaborador.strip()}** já possui esse tipo de registro hoje.")
                 elif resultado is True:
                     st.success(
-                        f"✅ Ponto Registrado! O registro de **{nome_colaborador}** foi efetuado com sucesso às {agora_local.strftime('%H:%M:%S')}."
+                        f"✅ Ponto Registrado! O registro de **{tipo_ponto}** para **{nome_colaborador}** foi efetuado com sucesso às {agora_local.strftime('%H:%M:%S')}."
                     )
                     st.rerun()
 
