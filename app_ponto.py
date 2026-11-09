@@ -77,7 +77,6 @@ def calcular_horario_por_longitude(lon):
 
 
 def verificar_tipo_ponto_ja_registrado_hoje(nome, tipo_ponto, data_hoje):
-    """Verifica se o funcionário já registrou exatamente ESSE TIPO de ponto hoje."""
     df = carregar_dados()
     if df.empty or "Nome" not in df.columns or "Data" not in df.columns or "Tipo" not in df.columns:
         return False
@@ -106,7 +105,6 @@ def salvar_registro(nome, tipo, lat, lon, obs):
         h = agora_local.strftime("%H:%M:%S")
         m = agora_local.strftime("%m/%Y")
 
-        # Impede apenas se o mesmo tipo exato já foi batido hoje
         if verificar_tipo_ponto_ja_registrado_hoje(nome, tipo, d):
             return "duplicado"
 
@@ -228,13 +226,22 @@ with aba1:
             hora_local = agora_local.time()
             data_hoje = agora_local.strftime("%d/%m/%Y")
             
-            # Validação de Horário apenas para a ENTRADA (a partir das 06:55)
-            HORA_MINIMA_PERMITIDA = time(6, 55, 0)
+            # --- VALIDAÇÃO DE ENTRADA (A partir das 06:55) ---
+            HORA_MINIMA_ENTRADA = time(6, 55, 0)
 
-            if tipo_ponto == "Entrada" and hora_local < HORA_MINIMA_PERMITIDA:
+            # --- VALIDAÇÃO DE SAÍDA (Até 05 minutos depois do horário oficial, ex: 17:30) ---
+            HORA_OFICIAL_SAIDA = time(17, 0, 0)
+            HORA_LIMITE_SAIDA = time(17, 30, 0) # 30 minutos de tolerância após as 17:00
+
+            if tipo_ponto == "Entrada" and hora_local < HORA_MINIMA_ENTRADA:
                 st.error(
                     f"❌ **Marcação Bloqueada!** O horário atual é {agora_local.strftime('%H:%M')}. "
-                    "O registro de **Entrada** só é autorizado a partir das **06:55** (05 minutos antes das 07:00)."
+                    "O registro de **Entrada** só é autorizado a partir das **06:55**."
+                )
+            elif tipo_ponto == "Saída" and hora_local > HORA_LIMITE_SAIDA:
+                st.error(
+                    f"❌ **Marcação Bloqueada!** O horário atual é {agora_local.strftime('%H:%M')}. "
+                    "O registro de **Saída** só é permitido até 30 minutos após o encerramento (limite às **17:30**)."
                 )
             elif verificar_tipo_ponto_ja_registrado_hoje(nome_colaborador, tipo_ponto, data_hoje):
                 st.warning(
