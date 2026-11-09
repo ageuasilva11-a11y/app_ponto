@@ -228,13 +228,13 @@ with aba1:
             hora_local = agora_local.time()
             data_hoje = agora_local.strftime("%d/%m/%Y")
             
-            # Validação de Horário apenas para a ENTRADA (a partir das 06:30)
-            HORA_MINIMA_PERMITIDA = time(6, 30, 0)
+            # Validação de Horário apenas para a ENTRADA (a partir das 06:55)
+            HORA_MINIMA_PERMITIDA = time(6, 55, 0)
 
             if tipo_ponto == "Entrada" and hora_local < HORA_MINIMA_PERMITIDA:
                 st.error(
                     f"❌ **Marcação Bloqueada!** O horário atual é {agora_local.strftime('%H:%M')}. "
-                    "O registro de **Entrada** só é autorizado a partir das **06:30** (30 minutos antes das 07:00)."
+                    "O registro de **Entrada** só é autorizado a partir das **06:55** (05 minutos antes das 07:00)."
                 )
             elif verificar_tipo_ponto_ja_registrado_hoje(nome_colaborador, tipo_ponto, data_hoje):
                 st.warning(
